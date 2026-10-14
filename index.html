@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AoE2 Unit Wins</title>
+<meta name="description" content="Which Age of Empires II units actually win? Win rates by civ and unit from over 300,000 ranked 1v1 games, with a stats model checked against real results.">
+<meta property="og:title" content="AoE2 Unit Wins - which units actually win?">
+<meta property="og:description" content="Win rate by civ and unit from real ranked 1v1 games (Elo 1200+), checked against the game's own stats.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M7 22l5-12 4 8 4-8 5 12' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<a class="sr" href="#view">Skip to content</a>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#/overview">AoE2 <span>Unit Wins</span></a>
+    <nav aria-label="Sections">
+      <a href="#/overview" data-nav="overview">Overview</a>
+      <a href="#/units" data-nav="units">Unit rankings</a>
+      <a href="#/wins" data-nav="wins">What wins</a>
+      <a href="#/counters" data-nav="counters">Counters</a>
+      <a href="#/civs" data-nav="civs">Civs</a>
+      <a href="#/method" data-nav="method">Method</a>
+    </nav>
+    <button class="btn" id="theme" type="button" aria-label="Toggle light and dark theme">Theme</button>
+  </div>
+</header>
+<main class="wrap" id="view" tabindex="-1"><p class="muted" style="padding:40px 0">Loading data...</p></main>
+<div class="tip" id="tip" role="tooltip"></div>
+<dialog id="detail" aria-labelledby="dtitle"></dialog>
+<footer>
+  <div class="wrap">
+    <p><b>Data.</b> Win rates come from the public weekly database dumps of <a href="https://aoestats.io/api-info/">aoestats.io</a> (ranked 1v1 random map, replay-enhanced games, 2023 to Feb 2024). Unit and civ stats come from <a href="https://github.com/SiegeEngineers/aoe2techtree">SiegeEngineers/aoe2techtree</a> (DE update 185872). Results are correlations from observed games, not controlled experiments; see <a href="#/method">Method</a>.</p>
+    <p>AoE2 Unit Wins was created under Microsoft's <a href="https://www.xbox.com/en-US/developers/rules">"Game Content Usage Rules"</a> using assets from Age of Empires II, &copy; Microsoft Corporation (no game art is used; unit and civilization names and stats only). It is an unofficial fan project and is not endorsed by or affiliated with Microsoft. No cookies, no tracking, no accounts.</p>
+  </div>
+</footer>
+<script src="assets/app.js"></script>
+</body>
+</html>
