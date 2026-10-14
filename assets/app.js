@@ -116,7 +116,7 @@
     svg.append(S('line', { x1: x0, x2: x0, y1: top, y2: H - axisH, style: 'stroke:var(--axis);stroke-width:1.5' }));
     svg.append(S('text', { x: (labelW + W - rightPad) / 2, y: H - 4, 'text-anchor': 'middle' }, o.axis || 'Win-rate uplift (percentage points)'));
     rows.forEach((r, i) => {
-      const y = top + i * rowH, cy = y + rowH / 2, bh = 16;
+      const y = top + i * rowH, cy = y + rowH / 2, bh = Math.min(16, rowH - 8);
       const g = S('g', { tabindex: 0, role: 'img', 'aria-label': r.aria || (r.label + ': ' + pts(r.v) + ' points') });
       g.append(S('rect', { class: 'hit', x: 0, y: y, width: W, height: rowH }));
       g.append(S('text', { x: labelW - 10, y: cy - (r.sub ? 2 : -4), 'text-anchor': 'end', class: 'lab' }, r.label));
@@ -316,14 +316,15 @@
     const f = findings();
     root.append(h('div', { class: 'cards' }, f.map((x) => h('div', { class: 'card finding' }, h('div', { class: 'big ' + (x.cls || '') }, x.big), h('h3', null, x.head), h('p', { class: 'muted' }, x.body)))));
 
-    // top 10
-    root.append(h('h2', null, 'Top 10 units by expected uplift'));
-    root.append(h('p', { class: 'muted' }, 'Expected uplift blends the strict-test result with a stats model, weighted by how many games exist. Click a bar for details.'));
-    const top = D.units.slice(0, 10);
+    // top 100
+    root.append(h('h2', null, 'Top 100 units by expected uplift'));
+    root.append(h('p', { class: 'muted' }, 'Expected uplift blends the strict-test result with a stats model, weighted by how many games exist. Click a bar for details, or see all ' + D.units.length + ' in ', h('a', { href: '#/units' }, 'Unit rankings'), '.'));
+    root.append(h('div', { class: 'legend' }, h('span', null, h('i', { style: 'background:var(--s1)' }), 'real-game evidence'), h('span', null, h('i', { style: 'background:var(--muted)' }), 'stats model only')));
+    const top = D.units.slice(0, 100);
     root.append(h('div', { class: 'card' }, forest(top.map((u) => ({
-      label: u.civ + ' ' + u.unit, sub: u.real ? `real games: ${fmtN(u.real.nh)} massed` : 'model only', v: u.up, c: u.real ? '--s1' : '--muted',
-      tip: unitTip(u), onClick: () => openDetail(u), aria: u.civ + ' ' + u.unit + ' expected uplift ' + pts(u.up) + ' points',
-    })), { axis: 'Expected win-rate uplift (percentage points)', labelW: 250 })));
+      label: '#' + u.rank + '  ' + u.civ + ' ' + u.unit, v: u.up, c: u.real ? '--s1' : '--muted',
+      tip: unitTip(u), onClick: () => openDetail(u), aria: '#' + u.rank + ' ' + u.civ + ' ' + u.unit + ' expected uplift ' + pts(u.up) + ' points' + (u.real ? '' : ', model only'),
+    })), { axis: 'Expected win-rate uplift (percentage points)', labelW: 270, rowH: 24 })));
     return root;
   }
   const tile = (v, l) => h('div', { class: 'tile' }, h('div', { class: 'v' }, v), h('div', { class: 'l' }, l));
@@ -352,7 +353,7 @@
     out.push({ big: 'r = ' + cal['used (cost weight k=0.25, no kiting)'].correlation_imperial_test.toFixed(2), head: 'The stats model needed correcting',
       body: `Checked against real army-vs-army results, a model with equal-resource fights and kiting scored r = ${cal['earlier model (equal-resource, 75% kiting)'].correlation_imperial_test.toFixed(2)}. Fights at roughly equal unit counts with no kiting score r = ${cal['used (cost weight k=0.25, no kiting)'].correlation_imperial_test.toFixed(2)}, so the ranking uses that.` });
     out.push({ big: 'Caution', head: 'Correlation, 2023 data',
-      body: `Even the strict test cannot separate a unit's effect from the plans of the players who choose it. The newest unit-level data is from early 2024, so balance changes since then are not reflected. ${56 - m.civs_in_real_data} civs added later are missing from the real-game data.` });
+      body: `Even the strict test cannot separate a unit's effect from the plans of the players who choose it. The newest unit-level data is from early 2024, so balance changes since then are not reflected. ${56 - m.civs_in_real_data} civs are missing from the real-game data (added to the game after it ends, or never recorded by the source).` });
     return out;
   }
 
@@ -513,7 +514,7 @@
       const c = D.civs.find((x) => x.name === civState.civ), us = D.units.filter((u) => u.civ === c.name);
       const bars = forest(us.map((u) => ({ label: u.unit, sub: u.real ? `real games: ${fmtN(u.real.nh)} massed` : 'model only', v: u.up, c: u.real ? '--s1' : '--muted', tip: unitTip(u), onClick: () => openDetail(u), aria: u.unit + ' ' + pts(u.up) + ' points' })), { axis: 'Expected win-rate uplift (percentage points)', labelW: 220 });
       body.replaceChildren(
-        h('div', { class: 'card' }, h('h3', null, c.name + ' — ' + c.style + ' civilization'), c.covered ? null : h('p', { class: 'callout' }, 'This civ is not in the real-game data (it was added after early 2024), so every number below is from the stats model.'),
+        h('div', { class: 'card' }, h('h3', null, c.name + ' — ' + c.style + ' civilization'), c.covered ? null : h('p', { class: 'callout' }, 'This civ is not in the real-game data, which ends in early 2024 and has no games for it, so every number below is from the stats model.'),
           h('h3', null, 'Bonuses'), h('ul', { class: 'clean' }, c.bonuses.map((b) => h('li', null, b))),
           h('p', null, h('b', null, 'Team bonus: '), c.team), h('p', null, h('b', null, 'Unique units: '), c.uu.join(', ')),
           h('h3', null, 'Unique techs'), h('ul', { class: 'clean' }, c.ut.map((b) => h('li', null, b)))),
