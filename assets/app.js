@@ -121,7 +121,7 @@
       g.append(S('rect', { class: 'hit', x: 0, y: y, width: W, height: rowH }));
       g.append(S('text', { x: labelW - 10, y: cy - (r.sub ? 2 : -4), 'text-anchor': 'end', class: 'lab' }, r.label));
       if (r.sub) g.append(S('text', { x: labelW - 10, y: cy + 12, 'text-anchor': 'end', style: 'fill:var(--muted);font-size:11px' }, r.sub));
-      g.append(S('path', { d: barPath(x0, x(r.v), cy - bh / 2, bh, 4), style: 'fill:var(' + (r.c || '--s1') + ')' }));
+      g.append(S('path', { d: barPath(x0, x(r.v), cy - bh / 2, bh, 4), style: r.faint ? 'fill:var(' + (r.c || '--s1') + ');fill-opacity:.28;stroke:var(' + (r.c || '--s1') + ');stroke-width:1.5' : 'fill:var(' + (r.c || '--s1') + ')' }));
       let endX = x(r.v);
       if (r.lo != null && r.hi != null) {
         const a = x(r.lo), b = x(r.hi);
@@ -253,7 +253,7 @@
   const legend = () => h('div', { class: 'legend' }, TEST_ORDER.map((t) => h('span', null, h('i', { style: 'background:var(' + TESTS[t].v + ')' }), TESTS[t].short)));
 
   /* ---------- derived data ---------- */
-  function corrRow(a) { return { civ: a[0], unit: a[1], nh: a[2], nl: a[3], wh: a[4], wl: a[5], up: a[6], se: a[7], z: a[8], r: a[9] }; }
+  function corrRow(a) { return { civ: a[0], unit: a[1], nh: a[2], nl: a[3], wh: a[4], wl: a[5], up: a[6], se: a[7], z: a[8], r: a[9], bands: a[10] }; }
   const key = (civ, unit) => civ.toLowerCase() + '|' + unit;
   function prepare() {
     TEST_ORDER.forEach((t) => D.corr[t].forEach((a) => { const r = corrRow(a); CORR[t][key(r.civ, r.unit)] = r; }));
@@ -276,7 +276,65 @@
   }
 
   /* ---------- views ---------- */
-  const tryState = { civ: 'goths', unit: 'huskarl' };
+
+  /* ---------- unit categories, calculation explainer ---------- */
+  const UCAT = {
+    unique: { name: 'Unique unit', v: '--s2', short: "a civ's own Castle Age unit (or its Elite version)", help: "A civ's own Castle Age unique unit (or its Elite version)." },
+    trash: { name: 'Trash', v: '--s3', short: 'costs no gold or stone after civ discounts (food and wood only)', help: "Not unique, and costs no gold or stone after the civ's discounts: food and wood only." },
+    standard: { name: 'Standard', v: '--s1', short: 'every other unit', help: 'Every other unit.' },
+  };
+  const catLegend = () => h('div', { class: 'legend' },
+    Object.values(UCAT).map((c) => h('span', { title: c.help }, h('i', { style: 'background:var(' + c.v + ')' }), c.name + ': ' + c.short)),
+    h('span', null, h('i', { style: 'background:var(--muted);opacity:.4' }), 'faded / outlined = stats model only, no real-game evidence'));
+  const BAND_LABELS = ['10–20 min', '20–30 min', '30–40 min', '40–50 min', '50+ min'];
+  function bandTable(r) {
+    const th = (x, i) => h('th', { class: i ? 'num' : '', style: 'cursor:default' }, x);
+    const body = (r.bands || []).map((b, i) => {
+      const has = b[4] != null;
+      return h('tr', { style: 'cursor:default' + (has ? '' : ';color:var(--muted)') },
+        h('td', null, BAND_LABELS[i]), h('td', { class: 'num' }, fmtN(b[0])), h('td', { class: 'num' }, has ? pct(b[2]) : '–'),
+        h('td', { class: 'num' }, fmtN(b[1])), h('td', { class: 'num' }, has ? pct(b[3]) : '–'),
+        h('td', { class: 'num ' + (has ? sgn(b[4]) : '') }, has ? pts(b[4]) + ' pts' : 'too few games'), h('td', { class: 'num' }, has ? Math.round(b[5] * 100) + '%' : '–'));
+    });
+    const foot = h('tr', { style: 'cursor:default;font-weight:650;background:var(--wash)' }, h('td', null, 'All lengths'), h('td', { class: 'num' }, fmtN(r.nh)), h('td', { class: 'num' }, pct(r.wh)),
+      h('td', { class: 'num' }, fmtN(r.nl)), h('td', { class: 'num' }, pct(r.wl)), h('td', { class: 'num ' + sgn(r.up) }, pts(r.up) + ' pts'), h('td', { class: 'num' }, '100%'));
+    return h('div', { class: 'tablewrap', style: 'margin:8px 0' }, h('table', null, h('thead', null, h('tr', null, ['Game length', 'Massed: games', 'Massed: win rate', 'Not massed: games', 'Not massed: win rate', 'Difference', 'Weight'].map(th))), h('tbody', null, body, foot)));
+  }
+  function smallBandNote(r) {
+    const i = (r.bands || []).findIndex((b) => b[4] != null && b[5] < 0.05 && Math.abs(b[4]) > 0.2);
+    if (i < 0) return null; const b = r.bands[i];
+    return h('p', { class: 'small muted' }, `The ${BAND_LABELS[i]} band has only ${fmtN(b[0])} massed and ${fmtN(b[1])} not-massed games, so its ${pts(b[4])} difference is mostly noise; the weight column shows it counts for just ${Math.max(1, Math.round(b[5] * 100))}% of the average.`);
+  }
+  function bandDetails(civ, unit, test, onTest, open, onToggle) {
+    const avail = TEST_ORDER.filter((t) => CORR[t][key(civ, unit)] && CORR[t][key(civ, unit)].bands);
+    if (!avail.length) return null;
+    if (!avail.includes(test)) test = avail[0];
+    const r = CORR[test][key(civ, unit)];
+    return h('details', { class: 'explain', open: open ? true : null, ontoggle: (e) => onToggle && onToggle(e.target.open) },
+      h('summary', null, 'Show the calculation for ' + title(civ) + ' + ' + title(unit)),
+      h('div', { class: 'filters' }, h('label', null, 'Test', seg(avail.map((t) => ({ v: t, t: TESTS[t].short })), test, onTest))),
+      h('p', { class: 'small muted' }, TESTS[test].help),
+      bandTable(r), smallBandNote(r),
+      h('p', { class: 'small' }, `Within each game-length band, "massed" games (${title(unit)} is at least 30% of the army) are compared with "not massed" games (at most 5%). Win rates are adjusted for the rating gap, so they read as "the win rate if both players had been rated equally". The band differences are averaged using the weights shown (bigger bands count more) to give ${pts(r.up)} points.`));
+  }
+  function explainerBody() {
+    const ex = CORR.cas[key('celts', 'woad raider')];
+    const kids = [
+      h('p', null, 'The question for each civ and unit: does this civ win more often in games where it builds a lot of that unit than in games where it builds almost none? This is exactly how that is measured.'),
+      h('ol', null,
+        h('li', null, h('b', null, 'Take the games. '), `All ranked 1v1 random-map games of that civ where both players were rated 1200+ and the game lasted at least 10 minutes (${fmtN(D.meta.base_games)} games across all civs).`),
+        h('li', null, h('b', null, 'Split them into massed and not massed. '), 'Count the army units the civ built (villagers, trade, siege, ships and monks are left out). Massed = the unit is at least 30% of that army and at least 10 were built. Not massed = at most 5%. Games in between are left out, so the two groups are clearly different.'),
+        h('li', null, h('b', null, 'Correct for rating. '), 'Every game has an expected result from the Elo gap: a player rated 1200 against one rated 1000 is expected to win about 76% of the time. Each group\'s win rate is its actual wins minus its expected wins, added to 50%. Beating a stronger opponent counts for more; cruising past a weaker one counts for less.'),
+        h('li', null, h('b', null, 'Correct for game length. '), 'A game that ends at 15 minutes and one that ends at 50 are very different, and the unit mix depends on how long the game lasts. So games go into five length bands (10–20, 20–30, 30–40, 40–50, 50+ minutes) and massed is compared with not massed only inside the same band. The band differences are then averaged, giving bands with more games (less noise) more weight.'),
+        h('li', null, h('b', null, 'The result is the uplift. '), 'That weighted average, in percentage points. +10 means: in games of the same length and rating, the civ won 10 points more often when it massed the unit.')),
+      h('p', null, h('b', null, 'Three tests. '), 'The same calculation is run three ways, differing only in which units count: the whole game; only games where both players reached the Imperial Age (units built in the Castle and Imperial Ages); and a strict test that counts only units built in the Castle Age, before the outcome is clear. The strict test avoids the trap that winning players simply train more late-game units.'),
+    ];
+    if (ex && ex.bands) kids.push(h('p', null, h('b', null, 'Worked example: Celts and Woad Raiders (strict test). '), `Woad Raiders made up at least 30% of the Celtic army in ${fmtN(ex.nh)} games (${pct(ex.wh)} win rate) and at most 5% in ${fmtN(ex.nl)} games (${pct(ex.wl)}). By length band:`), bandTable(ex), smallBandNote(ex));
+    kids.push(h('p', { class: 'small muted' }, 'What this cannot tell you: it is a correlation. A civ that wins more when it masses a unit may be winning for other reasons (it is ahead, the player is better, the unit is a symptom of a good opening). Rating and game length are controlled; skill and snowballing are not.'));
+    return h('div', null, kids);
+  }
+  const explainer = (open) => h('details', { class: 'explain', open: open ? true : null }, h('summary', null, 'How the numbers are calculated: massed vs not massed, adjusted for rating and game length'), explainerBody());
+  const tryState = { civ: 'goths', unit: 'huskarl', test: 'cas', open: false };
   function viewOverview() {
     const m = D.meta, root = h('div');
     root.append(h('section', { class: 'hero' }, h('h1', null, 'What actually wins in Age of Empires II?'),
@@ -307,7 +365,8 @@
           select('Unit (production line)', units.map((v) => ({ v, t: title(v) })), tryState.unit, (v) => { tryState.unit = v; renderTry(); })),
         legend(), forest(forestRowsFor(tryState.civ, tryState.unit), { aria: 'Uplift under three tests', rowH: 46 }),
         h('p', null, line), h('p', { class: 'callout' }, verdict),
-        h('p', { class: 'small muted' }, 'Bars show the win-rate difference between games where the unit is at least 30% of the army and games where it is at most 5%, adjusted for the rating gap and game length, within the same civ. Whiskers are 95% intervals.'));
+        h('p', { class: 'small muted' }, 'Bars show the win-rate difference between games where the unit is at least 30% of the army (massed) and games where it is at most 5%, adjusted for the rating gap and game length, within the same civ. Whiskers are 95% intervals.'),
+        bandDetails(tryState.civ, tryState.unit, tryState.test, (t) => { tryState.test = t; renderTry(); }, tryState.open, (o) => { tryState.open = o; }));
     }
     renderTry();
 
@@ -319,17 +378,17 @@
     // top 100
     root.append(h('h2', null, 'Top 100 units by expected uplift'));
     root.append(h('p', { class: 'muted' }, 'Expected uplift blends the strict-test result with a stats model, weighted by how many games exist. Click a bar for details, or see all ' + D.units.length + ' in ', h('a', { href: '#/units' }, 'Unit rankings'), '.'));
-    root.append(h('div', { class: 'legend' }, h('span', null, h('i', { style: 'background:var(--s1)' }), 'real-game evidence'), h('span', null, h('i', { style: 'background:var(--muted)' }), 'stats model only')));
+    root.append(catLegend());
     const top = D.units.slice(0, 100);
     root.append(h('div', { class: 'card' }, forest(top.map((u) => ({
-      label: '#' + u.rank + '  ' + u.civ + ' ' + u.unit, v: u.up, c: u.real ? '--s1' : '--muted',
-      tip: unitTip(u), onClick: () => openDetail(u), aria: '#' + u.rank + ' ' + u.civ + ' ' + u.unit + ' expected uplift ' + pts(u.up) + ' points' + (u.real ? '' : ', model only'),
+      label: '#' + u.rank + '  ' + u.civ + ' ' + u.unit, v: u.up, c: UCAT[u.cat].v, faint: !u.real,
+      tip: unitTip(u), onClick: () => openDetail(u), aria: '#' + u.rank + ' ' + u.civ + ' ' + u.unit + ' (' + UCAT[u.cat].name + ') expected uplift ' + pts(u.up) + ' points' + (u.real ? '' : ', model only'),
     })), { axis: 'Expected win-rate uplift (percentage points)', labelW: 270, rowH: 24 })));
     return root;
   }
   const tile = (v, l) => h('div', { class: 'tile' }, h('div', { class: 'v' }, v), h('div', { class: 'l' }, l));
   function unitTip(u) {
-    const L = [{ v: pts(u.up) + ' pts', k: 'expected uplift (#' + u.rank + ')', big: true }];
+    const L = [{ v: pts(u.up) + ' pts', k: 'expected uplift (#' + u.rank + ')', big: true }, { v: UCAT[u.cat].name, k: 'unit type', c: UCAT[u.cat].v }];
     if (u.real) L.push({ v: pct(u.real.wh) + ' vs ' + pct(u.real.wl), k: 'win rate massed vs barely used, strict test' }, { v: fmtN(u.real.nh), k: 'games with the unit massed' });
     else L.push({ v: 'model only', k: 'too few games with this unit at 1200+ Elo' });
     return tipNodes(L);
@@ -358,20 +417,23 @@
   }
 
   /* ---- Unit rankings ---- */
-  const uState = { civ: '', role: '', ev: '', q: '', key: 'rank', desc: false, limit: 100 };
+  const uState = { civ: '', role: '', ev: '', cat: '', q: '', key: 'rank', desc: false, limit: 100 };
   function viewUnits() {
     const root = h('div'); root.append(h('h1', null, 'Unit rankings'),
-      h('p', { class: 'lead' }, 'Every civ and unit, ranked by expected win-rate uplift. Click a column to sort and a row for the full breakdown.'));
+      h('p', { class: 'lead' }, 'Every civ and unit, ranked by expected win-rate uplift: how much more a civ wins when it masses that unit, adjusted for rating and game length. Click a column to sort and a row for the full breakdown.'),
+      explainer(true));
     const body = h('div');
     function draw() {
-      const rows = D.units.filter((u) => (!uState.civ || u.civ === uState.civ) && (!uState.role || u.role === uState.role) &&
+      const rows = D.units.filter((u) => (!uState.civ || u.civ === uState.civ) && (!uState.role || u.role === uState.role) && (!uState.cat || u.cat === uState.cat) &&
         (uState.ev === '' || (uState.ev === 'real' ? !!u.real : !u.real)) && (!uState.q || (u.civ + ' ' + u.unit).toLowerCase().includes(uState.q.toLowerCase())));
       const maxUp = Math.max(0.05, ...D.units.map((u) => Math.abs(u.up)));
+      const order = { unique: 0, trash: 1, standard: 2 };
       const cols = [
         { key: 'rank', label: '#', num: true, desc: false, val: (u) => u.rank },
         { key: 'civ', label: 'Civ', desc: false, val: (u) => u.civ }, { key: 'unit', label: 'Unit', desc: false, val: (u) => u.unit, cell: (u) => h('span', null, u.unit, u.caveats.length ? h('span', { class: 'tag', title: 'Has an ability the data cannot quantify: ' + u.caveats[0] }, '†') : null) },
-        { key: 'up', label: 'Expected uplift', num: true, val: (u) => u.up, cell: (u) => h('span', null, h('span', { class: 'inbar' + (u.up < 0 ? ' neg' : ''), style: `width:${Math.round(Math.abs(u.up) / maxUp * 60)}px;background:var(${u.real ? '--s1' : '--muted'})` }), pts(u.up) + ' pts') },
-        { key: 'wh', label: 'Real win rate: massed vs not', num: true, val: (u) => (u.real ? u.real.wh : null), cell: (u) => (u.real ? pct(u.real.wh) + ' vs ' + pct(u.real.wl) : h('span', { class: 'muted' }, 'model only')) },
+        { key: 'cat', label: 'Type', desc: false, val: (u) => order[u.cat], cell: (u) => h('span', null, h('span', { class: 'catdot', style: 'background:var(' + UCAT[u.cat].v + ')' }), UCAT[u.cat].name) },
+        { key: 'up', label: 'Expected uplift', num: true, val: (u) => u.up, cell: (u) => h('span', null, h('span', { class: 'inbar' + (u.up < 0 ? ' neg' : '') + (u.real ? '' : ' faint'), style: `width:${Math.round(Math.abs(u.up) / maxUp * 60)}px;background:var(${UCAT[u.cat].v})` }), pts(u.up) + ' pts') },
+        { key: 'wh', label: 'Win rate: massed vs not massed', num: true, val: (u) => (u.real ? u.real.wh : null), cell: (u) => (u.real ? pct(u.real.wh) + ' vs ' + pct(u.real.wl) : h('span', { class: 'muted' }, 'model only')) },
         { key: 'nh', label: 'Games massed', num: true, val: (u) => (u.real ? u.real.nh : null), cell: (u) => (u.real ? fmtN(u.real.nh) : '') },
         { key: 'model', label: 'Model score', num: true, val: (u) => u.model, cell: (u) => u.model.toFixed(2) },
         { key: 'hp', label: 'HP', num: true, val: (u) => u.hp, cell: (u) => Math.round(u.hp) }, { key: 'atk', label: 'Atk', num: true, val: (u) => u.atk, cell: (u) => Math.round(u.atk) },
@@ -379,17 +441,18 @@
         { key: 'cost', label: 'Cost', num: true, val: (u) => costEq(u), cell: (u) => costStr(u) },
       ];
       const t = dataTable(cols, rows, uState, draw, openDetail);
-      body.replaceChildren(h('p', { class: 'small muted' }, 'Blue bars have real-game evidence behind them; grey bars are the stats model alone. † = unit has an ability the data cannot quantify. Armor is melee/pierce. Stats are fully upgraded for that civ.'), t.el);
+      body.replaceChildren(catLegend(), h('p', { class: 'small muted' }, '"Massed" = the unit is at least 30% of the civ\'s army, "not massed" = at most 5% (see the calculation above). † = unit has an ability the data cannot quantify. Armor is melee/pierce. Stats are fully upgraded for that civ. Unit type is by the cost the civ actually pays, so a civ discount can turn a unit into trash.'), t.el);
       uState._rows = t.sorted;
     }
     const civs = [...new Set(D.units.map((u) => u.civ))].sort();
     root.append(h('div', { class: 'filters' },
       select('Civilization', [{ v: '', t: 'All civs' }, ...civs.map((c) => ({ v: c, t: c }))], uState.civ, (v) => { uState.civ = v; uState.limit = 100; draw(); }),
+      select('Type', [{ v: '', t: 'All types' }, { v: 'unique', t: 'Unique units' }, { v: 'trash', t: 'Trash (no gold)' }, { v: 'standard', t: 'Standard' }], uState.cat, (v) => { uState.cat = v; uState.limit = 100; draw(); }),
       select('Role', [{ v: '', t: 'All roles' }, ...ROLES.map((c) => ({ v: c, t: c }))], uState.role, (v) => { uState.role = v; uState.limit = 100; draw(); }),
       select('Evidence', [{ v: '', t: 'All' }, { v: 'real', t: 'Real-game evidence' }, { v: 'model', t: 'Model only' }], uState.ev, (v) => { uState.ev = v; uState.limit = 100; draw(); }),
       h('label', null, 'Search', h('input', { type: 'search', value: uState.q, placeholder: 'e.g. Teutons, Paladin', oninput: (e) => { uState.q = e.target.value; uState.limit = 100; draw(); } })),
-      h('button', { class: 'btn', type: 'button', onclick: () => downloadCSV('aoe2-unit-wins-ranking.csv', ['rank', 'civ', 'unit', 'role', 'expected_uplift_pts', 'real_wr_massed', 'real_wr_barely_used', 'games_massed', 'model_score', 'hp', 'attack', 'melee_armor', 'pierce_armor', 'range', 'cost_eq'],
-        (uState._rows || D.units).map((u) => [u.rank, u.civ, u.unit, u.role, (u.up * 100).toFixed(2), u.real ? u.real.wh : '', u.real ? u.real.wl : '', u.real ? u.real.nh : '', u.model, u.hp, u.atk, u.ma, u.pa, u.rng, costEq(u).toFixed(1)])) }, 'Download CSV')));
+      h('button', { class: 'btn', type: 'button', onclick: () => downloadCSV('aoe2-unit-wins-ranking.csv', ['rank', 'civ', 'unit', 'type', 'role', 'expected_uplift_pts', 'real_wr_massed', 'real_wr_not_massed', 'games_massed', 'model_score', 'hp', 'attack', 'melee_armor', 'pierce_armor', 'range', 'cost_eq'],
+        (uState._rows || D.units).map((u) => [u.rank, u.civ, u.unit, UCAT[u.cat].name, u.role, (u.up * 100).toFixed(2), u.real ? u.real.wh : '', u.real ? u.real.wl : '', u.real ? u.real.nh : '', u.model, u.hp, u.atk, u.ma, u.pa, u.rng, costEq(u).toFixed(1)])) }, 'Download CSV')));
     root.append(body); draw();
     const qp = new URLSearchParams((location.hash.split('?')[1]) || '');
     if (qp.get('civ') && qp.get('unit')) { const u = D.units.find((x) => x.civ === qp.get('civ') && x.unit === qp.get('unit')); if (u) setTimeout(() => openDetail(u), 0); }
@@ -398,10 +461,12 @@
   const costEq = (u) => (u.cost.food || 0) + (u.cost.wood || 0) + 1.5 * ((u.cost.gold || 0) + (u.cost.stone || 0));
   const costStr = (u) => Object.entries(u.cost).map(([k, v]) => Math.round(v * 10) / 10 + { food: 'F', wood: 'W', gold: 'G', stone: 'S' }[k]).join(' ');
 
+  let detailTest = 'cas', detailOpen = false;
   function openDetail(u) {
     const d = $('#detail');
     const close = () => d.close();
     const parts = [];
+    parts.push(h('p', { class: 'muted', style: 'margin:0 0 6px' }, h('span', { class: 'catdot', style: 'background:var(' + UCAT[u.cat].v + ')' }), UCAT[u.cat].name + ' – ' + UCAT[u.cat].help));
     parts.push(h('div', { class: 'kv' }, kv(Math.round(u.hp), 'HP'), kv(Math.round(u.atk), 'Attack'), kv(u.ma + ' / ' + u.pa, 'Melee / pierce armor'), kv(u.rng, 'Range'), kv(u.spd, 'Speed'), kv(u.reload + ' s', 'Reload'), kv(costStr(u), 'Cost')));
     parts.push(h('p', null, h('b', null, 'Expected uplift ' + pts(u.up) + ' pts'), ` (rank #${u.rank}; stats-model-only rank #${u.rank_model}). `, u.real ? `${Math.round(u.ew * 100)}% of the estimate comes from real games.` : 'No usable real-game evidence, so this is the stats model alone.'));
     if (u.real) {
@@ -409,6 +474,7 @@
       parts.push(h('h3', null, 'Real games: ' + title(ru) + ' production line'), legend(), forest(forestRowsFor(u.civ, ru), { aria: 'Uplift under three tests', rowH: 44 }),
         h('p', { class: 'small muted' }, `Win rate ${pct(u.real.wh)} when massed (${fmtN(u.real.nh)} games) vs ${pct(u.real.wl)} when barely used (${fmtN(u.real.nl)} games), strict test.`));
     }
+    if (u.real) { const bd = bandDetails(u.civ, u.real.ru, detailTest, (t) => { detailTest = t; openDetail(u); }, detailOpen, (o) => { detailOpen = o; }); if (bd) parts.push(bd); }
     parts.push(h('h3', null, 'Stats model: strength vs generic fully upgraded units'));
     const mu = Object.entries(u.matchups).map(([k, v]) => ({ label: k, v: Math.log10(v), valLabel: v.toFixed(2) + '×', c: v >= 1 ? '--pole-pos' : '--pole-neg', tip: [{ v: v.toFixed(2) + '×', k: 'strength ratio vs ' + k, big: true }] }));
     const mf = forest(mu, { axis: 'Strength ratio (log scale; right of centre = this unit wins)', rowH: 28, labelW: 170, tickList: [0.1, 0.25, 0.5, 1, 2, 4, 10, 30].map((r) => ({ v: Math.log10(r) === 0 ? 0 : Math.log10(r), t: r < 1 ? '1/' + Math.round(1 / r) : String(r) })) });
@@ -506,21 +572,29 @@
   }
 
   /* ---- Civs ---- */
-  const civState = { civ: 'Goths' };
+  const slug = (n) => 'civ-' + n.replace(/\W/g, '');
   function viewCivs() {
-    const root = h('div'); root.append(h('h1', null, 'Civilizations'), h('p', { class: 'lead' }, 'Bonuses, unique units and techs, and how each unit ranks for that civ.'));
-    const body = h('div');
-    function draw() {
-      const c = D.civs.find((x) => x.name === civState.civ), us = D.units.filter((u) => u.civ === c.name);
-      const bars = forest(us.map((u) => ({ label: u.unit, sub: u.real ? `real games: ${fmtN(u.real.nh)} massed` : 'model only', v: u.up, c: u.real ? '--s1' : '--muted', tip: unitTip(u), onClick: () => openDetail(u), aria: u.unit + ' ' + pts(u.up) + ' points' })), { axis: 'Expected win-rate uplift (percentage points)', labelW: 220 });
-      body.replaceChildren(
-        h('div', { class: 'card' }, h('h3', null, c.name + ' — ' + c.style + ' civilization'), c.covered ? null : h('p', { class: 'callout' }, 'This civ is not in the real-game data, which ends in early 2024 and has no games for it, so every number below is from the stats model.'),
+    const root = h('div');
+    root.append(h('h1', null, 'Civilizations'), h('p', { class: 'lead' }, 'All ' + D.civs.length + ' civs, one below the other: bonuses, unique units and techs, and how each of their units ranks. Use the dropdown to jump to one.'));
+    root.append(h('div', { class: 'jumpbar' },
+      select('Jump to civilization', [{ v: '', t: 'Choose a civ…' }, ...D.civs.map((c) => ({ v: c.name, t: c.name }))], '', (v) => {
+        if (!v) return; const el = document.getElementById(slug(v));
+        if (el) { el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); el.focus({ preventScroll: true }); }
+      }), catLegend()));
+    const inData = new Set(); TEST_ORDER.forEach((t) => Object.values(CORR[t]).forEach((r) => inData.add(r.civ)));
+    D.civs.forEach((c) => {
+      const us = D.units.filter((u) => u.civ === c.name);
+      const anyReal = us.some((u) => u.real), present = inData.has(c.name.toLowerCase());
+      const bars = forest(us.map((u) => ({ label: u.unit, v: u.up, c: UCAT[u.cat].v, faint: !u.real, tip: unitTip(u), onClick: () => openDetail(u),
+        aria: u.unit + ' (' + UCAT[u.cat].name + ') ' + pts(u.up) + ' points' + (u.real ? '' : ', model only') })), { axis: 'Expected win-rate uplift (percentage points)', labelW: 220, rowH: 30 });
+      root.append(h('section', { id: slug(c.name), class: 'civsec', tabindex: '-1' },
+        h('div', { class: 'civhead' }, h('h2', null, c.name), h('span', { class: 'muted' }, c.style + ' civilization'), h('button', { class: 'btn', type: 'button', onclick: () => scrollTo({ top: 0, behavior: 'smooth' }) }, '↑ Top')),
+        h('div', { class: 'card' }, anyReal ? null : h('p', { class: 'callout' }, present ? 'This civ has too few games at 1200+ Elo for any of its units to be measured, so every number below is from the stats model.' : 'This civ is not in the real-game data, which ends in early 2024 and has no games for it, so every number below is from the stats model.'),
           h('h3', null, 'Bonuses'), h('ul', { class: 'clean' }, c.bonuses.map((b) => h('li', null, b))),
           h('p', null, h('b', null, 'Team bonus: '), c.team), h('p', null, h('b', null, 'Unique units: '), c.uu.join(', ')),
           h('h3', null, 'Unique techs'), h('ul', { class: 'clean' }, c.ut.map((b) => h('li', null, b)))),
-        h('h2', null, 'Units for ' + c.name), h('p', { class: 'small muted' }, 'Blue bars have real-game evidence; grey bars are the stats model alone. Click a bar for details.'), h('div', { class: 'card' }, bars));
-    }
-    root.append(h('div', { class: 'filters' }, select('Civilization', D.civs.map((c) => ({ v: c.name, t: c.name })), civState.civ, (v) => { civState.civ = v; draw(); })), body); draw();
+        h('div', { class: 'card' }, h('h3', null, 'Units for ' + c.name + ' by expected uplift'), bars)));
+    });
     return root;
   }
 
@@ -533,8 +607,7 @@
       h('p', null, 'Game results come from the public weekly database dumps of aoestats.io: ranked 1v1 random map games where a replay was parsed, giving each player\'s units built in each age. Windows used: ' + m.windows + '. ' + m.why_not_newer + '.'),
       h('p', null, `${fmtN(m.base_games)} games have two different civs, both players rated 1200+, and last at least 10 minutes. Each test then keeps games with enough army units (and, for two of the tests, where both players reached the Imperial Age): ${TEST_ORDER.map((t) => TESTS[t].short + ' ' + fmtN(m.games[t])).join(', ')}. Villagers, trade units, siege, ships and monks are not counted as army.`),
       h('p', null, 'Unit and civ stats come from the game data in SiegeEngineers/aoe2techtree (DE update 185872): base stats, available upgrades per civ, civ bonuses and unique techs.'));
-    sec('The measure: win-rate uplift',
-      h('p', null, 'For each civ and unit: the win rate in games where the unit is at least 30% of the army (and at least 10 built), minus the win rate in games where it is at most 5% - within the same civ, so civ strength cancels out. Both win rates are compared with the rating-expected win rate and the difference is averaged across game-length bands (10-20, 20-30, 30-40, 40-50, 50+ minutes). The correlation r is between the unit\'s share of the army and win-minus-expected.'));
+    sec('How the win-rate uplift is calculated', explainerBody());
     sec('Why there are three tests',
       h('p', null, 'The whole-game count is contaminated: a player who loses early never reaches the Castle Age (so lands in the "barely used" group for every Castle-age unit), and a player who is ahead trains lots of late units. The Imperial test removes early losses; the Castle-age test looks only at what was built before the outcome is clear.'),
       tableOf(['Test', 'Early-age lines', 'Later and unique units'], TEST_ORDER.map((t) => [TESTS[t].name, pts(cf.mean_uplift_by_test[t].early_lines), pts(cf.mean_uplift_by_test[t].later_and_unique)])),
@@ -587,6 +660,9 @@
     try { localStorage.setItem('theme', next); } catch (e) { /* ignore */ }
     route(true);
   });
+
+  const setHdr = () => document.documentElement.style.setProperty('--hdr', ($('header.top') ? $('header.top').offsetHeight : 56) + 'px');
+  window.addEventListener('resize', setHdr); setHdr();
 
   /* ---------- boot ---------- */
   fetch('data/data.json').then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then((j) => {

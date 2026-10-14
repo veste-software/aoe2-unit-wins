@@ -138,3 +138,21 @@ footer p { max-width: 860px; }
   .filters select, .filters input[type="search"] { min-width: 0; width: 100%; }
   .filters label { flex: 1 1 140px; }
 }
+
+/* explainer, categories, civ list */
+details.explain { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 2px 16px 12px; margin: 14px 0; }
+details.explain > summary { cursor: pointer; font-weight: 650; padding: 10px 0; }
+details.explain ol { padding-left: 1.25rem; margin: .4rem 0 .8rem; }
+details.explain li { margin: .55rem 0; }
+.catdot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.inbar.faint { opacity: .4; }
+.jumpbar { position: sticky; top: var(--hdr, 56px); z-index: 15; background: var(--page); padding: 8px 0 4px; border-bottom: 1px solid var(--grid); display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: end; }
+.jumpbar label { display: flex; flex-direction: column; gap: 3px; font-size: .82rem; color: var(--ink2); }
+.jumpbar select { background: var(--surface); border: 1px solid var(--axis); border-radius: 8px; padding: 7px 10px; min-width: 220px; }
+.jumpbar .legend { margin: 0 0 6px; }
+.civsec { scroll-margin-top: calc(var(--hdr, 56px) + 96px); margin-top: 1.6rem; outline: none; }
+.civsec:focus-visible { outline: 2px solid var(--s1); outline-offset: 4px; border-radius: 8px; }
+.civhead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.civhead h2 { margin-top: 0; }
+.civhead .btn { margin-left: auto; padding: 3px 10px; font-size: .82rem; }
+@media (max-width: 640px) { .jumpbar { position: static; } .civsec { scroll-margin-top: calc(var(--hdr, 56px) + 12px); } }
